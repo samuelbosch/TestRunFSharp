@@ -15,9 +15,6 @@ module MultiSwarmOptimization =
         Pos: float list; 
         Cost: float 
     }
-    with 
-        static member copy b = b //{ b with Pos = (Array.copy b.Pos) }
-    end
 
     type Particle =  { 
         Position: float list; 
@@ -39,7 +36,7 @@ module MultiSwarmOptimization =
     with 
         static member create numParticles dim minX maxX = 
             let particles = List.init numParticles (fun i -> Particle.create dim minX maxX)
-            let bestPart = particles |> List.minBy (fun p -> p.Best.Cost) |> (fun p -> Best.copy p.Best)
+            let bestPart = particles |> List.minBy (fun p -> p.Best.Cost) |> (fun p -> p.Best)
             { Particles = particles; Best=bestPart }
     end
 
@@ -53,7 +50,7 @@ module MultiSwarmOptimization =
     with 
         static member create numSwarms numParticles dim minX maxX =
             let swarms = List.init numSwarms (fun i -> Swarm.create numParticles dim minX maxX)
-            let bestSwarm = swarms |> List.minBy (fun s -> s.Best.Cost) |> (fun s -> Best.copy s.Best)
+            let bestSwarm = swarms |> List.minBy (fun s -> s.Best.Cost) |> (fun s -> s.Best)
             { Swarms = swarms; Dim=dim; MinX=minX;MaxX=maxX; Best=bestSwarm }
     end
 
