@@ -1,3 +1,4 @@
-Re-implementations in F# of the techniques demonstrated by Dr. James McCaffrey in the MSDN Magazine.
+Re-implementations in F# of the techniques demonstrated by Dr. James McCaffrey in MSDN Magazine.
 
-I try to stick to a purely functional style.
+Already implemented:
+- most of MultiSwarmOptimization (September 2013 Issue)
