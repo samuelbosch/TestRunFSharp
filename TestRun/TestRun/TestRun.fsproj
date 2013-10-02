@@ -43,8 +43,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="MultiSwarmOptimization.fs" />
-    <None Include="Script.fsx" />
+    <Compile Include="RadialNetIO.fs" />
     <Compile Include="Program.fs" />
+    <None Include="Script.fsx" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TestRun.Original\TestRun.Original.csproj">
