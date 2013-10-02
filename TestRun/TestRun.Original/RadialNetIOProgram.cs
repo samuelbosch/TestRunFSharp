@@ -4,9 +4,9 @@
 using System;
 namespace RadialNetworksInputOutput
 {
-  class RadialNetIOProgram
+  public class RadialNetIOProgram
   {
-    static void Main(string[] args)
+    public static void Main(string[] args)
     {
       Console.WriteLine("\nBegin Radial Basis Function (RBF) network input-output demo\n");
 
@@ -155,6 +155,7 @@ namespace RadialNetworksInputOutput
         double d = Distance(inputs, centroids[j]); // could use a 'distSquared' approach
         Console.WriteLine("\nHidden[" + j + "] distance = " + d.ToString("F4"));
         double r = -1.0 * (d * d) / (2 * stdDevs[j] * stdDevs[j]);
+        Console.WriteLine("\nHidden[" + j + "] r = " + r.ToString("F4"));
         double g = Math.Exp(r);
         Console.WriteLine("Hidden[" + j + "] output = " + g.ToString("F4"));
         hOutputs[j] = g;
