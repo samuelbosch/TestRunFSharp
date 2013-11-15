@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Express 2012 for Web
+# Visual Studio 2012
 Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "TestRun", "TestRun\TestRun.fsproj", "{4C733532-1974-489D-AD3E-13D4D251B9E5}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestRun.Original", "TestRun.Original\TestRun.Original.csproj", "{42470862-05C6-4CBD-BEEE-3BA0DAA82A0A}"

@@ -44,6 +44,7 @@
   <ItemGroup>
     <Compile Include="MultiSwarmOptimization.fs" />
     <Compile Include="RadialNetIO.fs" />
+    <Compile Include="Nist.fs" />
     <Compile Include="Program.fs" />
     <None Include="Script.fsx" />
   </ItemGroup>
