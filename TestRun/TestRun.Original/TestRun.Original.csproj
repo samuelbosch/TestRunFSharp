@@ -42,6 +42,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="LogisticRegressionNRProgram.cs" />
     <Compile Include="MultiSwarmProgram.cs" />
     <Compile Include="NistProgram.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

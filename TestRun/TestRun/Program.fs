@@ -11,8 +11,9 @@ module Program =
         //MultiSwarmOptimization.run()
         //MultiSwarm.MultiSwarmProgram.Main(args)
         //RadialNetIO.run()
-        NistRandomness.NistProgram.Main(args)
-        Nist.run()
+        //NistRandomness.NistProgram.Main(args)
+        //Nist.run()
+        LogisticRegressionNR.run()
         Console.WriteLine("Hit key to close")
         Console.ReadLine() |> ignore
         0
