@@ -163,6 +163,196 @@ let meanSquaredError (pVector:float[]) (yVector:float[]) =
         let result  = Array.fold2 (fun s p y -> s + ((p - y) * (p - y))) 0.0 pVector yVector
         result / (float pRows)
 
+let matrixInit rows cols initializer =
+    Array.init cols (fun row -> 
+        Array.init rows (initializer row))
+
+let matrixTranspose (matrix:float[][]) =
+    let rows = matrix.Length
+    let cols = matrix.[0].Length // assume all columns have equal size
+    // note the indexing swap
+    matrixInit cols rows (fun j i -> matrix.[i].[j]) 
+
+let computeXtilde (pVector:float[]) (xMatrix:float[][]) =
+    // note: W[t-1] is nxn which could be huge so instead of computing b[t] = b[t-1] + inv(X'W[t-1]X)X'(y - p[t-1]) directly
+    // we compute the W[t-1]X part, without the use of W.
+    // Since W is derived from the prob vector and W has non-0.0 elements only on the diagonal we can avoid a ton of work
+    // by using the prob vector directly and not computing W at all.
+    // Some of the research papers refer to the product W[t-1]X as X~ hence the name of this method.
+    // ex: if xMatrix is 10x4 then W would be 10x10 so WX would be 10x4 -- the same size as X
+    let pRows = pVector.Length;
+    let xRows = xMatrix.Length;
+    let xCols = xMatrix.[0].Length;
+
+    if (pRows <> xRows) then
+        raise (new Exception("The pVector and xMatrix are not compatible in ComputeXtilde"))
+
+    // we are not doing matrix multiplication. the p column vector sort of lays on top of each matrix column.
+    
+    let result = matrixInit pRows xCols (fun i j -> 
+        pVector.[i] * (1.0 - pVector.[i]) * xMatrix.[i].[j])
+    result
+
+let matrixProduct (matrixA:float[][]) (matrixB:float[][]) =
+    let aRows, aCols = matrixA.Length, matrixA.[0].Length
+    let bRows, bCols = matrixB.Length, matrixB.[0].Length
+    if aCols <> bRows then
+        raise (new Exception("Non-conformable matrices in MatrixProduct"))
+    
+    let result = matrixCreate aRows bCols
+    for i = 0 to aRows do // each row of A
+        for j = 0 to bCols do // each col of B
+            for k = 0 to aCols do // could use k < bRows
+                result.[i].[j] <- result.[i].[j] + (matrixA.[i].[k] * matrixB.[k].[j])
+    result
+
+let matrixDuplicate (matrix:float[][]) =
+    Array.init matrix.Length (fun i -> Array.copy matrix.[i])
+
+let inline swap (arr:'a []) a b = 
+    let tmp = arr.[a]
+    arr.[a] <- arr.[b]
+    arr.[b] <- tmp
+
+let matrixDecompose (matrix:float[][]) =
+    // Doolittle's method (1.0s on L diagonal) with partial pivoting
+    let rows = matrix.Length
+    let cols = matrix.[0].Length; // assume all rows have the same number of columns so just use row [0].
+    if (rows <> cols) then
+        raise (new Exception("Attempt to MatrixDecompose a non-square mattrix"))
+
+    let n = rows // convenience
+    let result = matrixDuplicate matrix
+    let perm = Array.init n id // set up row permutation result
+    let mutable tog = 1 // toggle tracks number of row swaps. used by MatrixDeterminant
+    
+    let rec loop j =
+        if j >= n-1 then // each column
+            Some(result), perm , tog
+        else
+            let mutable max, pRow = Math.Abs(result.[j].[j]), j // find largest value in row
+        
+            for i = j + 1 to n-1 do
+                let aij = Math.Abs(result.[i].[j])
+                if aij > max then
+                    max <- aij 
+                    pRow <- i
+        
+            if pRow <> j then // if largest value not on pivot, swap rows
+                swap result pRow j
+                swap perm pRow j // and swap perm info
+                tog <- -tog // adjust the row-swap toggle
+        
+            let ajj = result.[j].[j]
+            if (Math.Abs(ajj) > 0.00000001) then // if diagonal after swap is zero . . .
+                None, perm, tog 
+            else
+                for i = j + 1 to n - 1 do
+                    let aij = result.[i].[j] / ajj
+                    result.[i].[j] <- aij
+                    for k = j + 1 to n - 1 do
+                        result.[i].[k] <- result.[i].[k] - (aij * result.[j].[k])    
+                loop (j+1)
+    loop 0
+
+let helperSolve (luMatrix:float[][]) (b:float[]) =
+    // solve Ax = b if you already have luMatrix from A and b has been permuted
+    let n = luMatrix.Length
+
+    // 1. make a copy of the permuted b vector
+    let x = Array.copy b
+
+    // 2. solve Ly = b using forward substitution
+    for i in 1 .. n-1 do
+        let mutable sum = x.[i]
+        for j in 0 .. i-1 do
+             sum <- sum - (luMatrix.[i].[j] * x.[j])
+        x.[i] <- sum
+
+    // 3. solve Ux = y using backward substitution
+    x.[n-1] <- x.[n-1] / luMatrix.[n - 1].[n - 1]
+    for i in n - 2 .. 0 do 
+        let mutable sum = x.[i]
+
+        for j in i + 1 .. n - 1 do
+            sum <- sum - (luMatrix.[i].[j] * x.[j])
+        
+        x.[i] <- sum / luMatrix.[i].[i]
+    x
+
+let matrixInverse (matrix:float[][]) =
+    let n = matrix.Length
+    
+    let lum, perm, toggle = matrixDecompose matrix
+    match lum with 
+    | None -> None
+    | Some(lum) ->
+        let result = matrixDuplicate matrix
+        let b = Array.zeroCreate n
+        for i in 0 .. n - 1 do
+            for j in 0 .. n - 1 do
+                b.[j] <- if i = perm.[j] then 1.0 else 0.0
+            let x = helperSolve lum b
+            for j in 0 .. n - 1 do
+                result.[j].[i] <- x.[j]
+        Some(result)
+
+let vectorOp op (vectorA:float[]) (vectorB:float[]) =
+    let aRows, bRows = vectorA.Length, vectorB.Length
+    if aRows <> bRows then
+        raise (new Exception("Non-conformable vectors in VectorSubtraction"))
+    Array.map2 op vectorA vectorB
+
+let vectorSubstraction =  vectorOp (-)
+let vectorAddition =  vectorOp (+)
+
+let matrixVectorProduct (matrix:float[][]) (vector:float[]) =
+    let mRows, mCols = matrix.Length, matrix.[0].Length
+    let vRows = vector.Length
+    if mCols <> vRows then
+        raise (new Exception("Non-conformable matrix and vector in MatrixVectorProduct"))
+    
+    matrix |> Array.map
+        (Array.mapi (fun j e -> e * vector.[j]) >> Array.sum)
+
+let constructNewBetaVector (oldBetaVector:float[]) (xMatrix:float[][]) (yVector:float[]) (oldProbVector:float[]) =
+    // this is the heart of the Newton-Raphson technique
+    // b[t] = b[t-1] + inv(X'W[t-1]X)X'(y - p[t-1])
+    //
+    // b[t] is the new (time t) b column vector
+    // b[t-1] is the old (time t-1) vector
+    // X' is the transpose of the X matrix of x data (1.0, age, sex, chol)
+    // W[t-1] is the old weight matrix
+    // y is the column vector of binary dependent variable data
+    // p[t-1] is the old column probability vector (computed as 1.0 / (1.0 + exp(-z) where z = b0x0 + b1x1 + . . .)
+
+    // note: W[t-1] is nxn which could be huge so instead of computing b[t] = b[t-1] + inv(X'W[t-1]X)X'(y - p[t-1])
+    // compute b[t] = b[t-1] + inv(X'X~)X'(y - p[t-1]) where X~ is W[t-1]X computed directly
+    // the idea is that the vast majority of W[t-1] cells are 0.0 and so can be ignored
+
+    let Xt = matrixTranspose xMatrix                 // X'
+    let A = computeXtilde oldProbVector xMatrix      // WX
+    let B = matrixProduct Xt A                       // X'WX
+
+    match matrixInverse B with // inv(X'WX)
+    | None -> None             // computing the inverse can blow up easily
+    | Some(C) ->
+        let D = matrixProduct C Xt                        // inv(X'WX)X'
+        let YP = vectorSubstraction yVector oldProbVector  // y-p
+        let E = matrixVectorProduct D YP                  // inv(X'WX)X'(y-p)
+        let result = vectorAddition oldBetaVector E       // b + inv(X'WX)X'(y-p)
+        Some(result)
+
+let noChange (oldBvector:float[]) newBvector epsilon =
+    // true if all new b values have changed by amount smaller than epsilon
+    oldBvector |> Array.forall2 (fun a b -> (Math.Abs(a-b)) < epsilon) <| newBvector
+
+let outOfControl (oldBvector:float[]) newBvector jumpFactor =
+    // true if any new b is jumpFactor times greater than old b
+    (Array.forall ((<>) 0.0) oldBvector)
+    &&
+    oldBvector |> Array.exists2 (fun a b -> ((Math.Abs(a - b) / Math.Abs(a)) > jumpFactor)) <| newBvector
+
 let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon jumpFactor =
     // Use the Newton-Raphson technique to estimate logistic regression beta parameters
     // xMatrix is a design matrix of predictor variables where the first column is augmented with all 1.0 to represent dummy x values for the b0 constant
@@ -193,76 +383,50 @@ let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon
     let mse = meanSquaredError pVector yVector
     let timesWorse = 0 // how many times are the new betas worse (i.e., give worse MSE) than the current betas
 
-    //CONTINUE HERE!
-//    let iteration = 
-//        newBVector = constructNewBetaVector
+    let rec loop (bVector:float[]) (bestBvector:float[]) (mse:float) timesWorse i = 
+        if i < maxIterations then
+            let newBvector = constructNewBetaVector bVector xMatrix yVector pVector // generate new beta values using Newton-Raphson. could return null.
+            match newBvector with
+            | None -> bestBvector
+            | Some(newBvector) ->
+                // no significant change?
+                if noChange bVector newBvector epsilon then
+                    newBvector
+                // spinning out of control?
+                else if outOfControl bVector newBvector jumpFactor then
+                    newBvector
+                else
+                    let pVector = constructProbVector xMatrix newBvector
+                    
+                    // are we getting worse or better?
+                    let newMSE = meanSquaredError pVector yVector // smaller is better
+                    if newMSE > mse then // new MSE is worse than current SSD
+                        let timesWorse = timesWorse + 1 // update counter
+                        if timesWorse >= 4 then
+                            bestBvector
+                        else
+                            let bVector = 
+                                newBvector // update current b: old b becomes not the new b but halfway between new and old
+                                |> Array.mapi (fun k newB -> (bVector.[k] + newB ) / 2.0)
+                            let mse = newMSE
+                            loop bVector bestBvector mse timesWorse i+1
+                    else // new SSD is be better than old
+                        let bVector = vectorDuplicate newBvector
+                        let bestBvector = vectorDuplicate bVector
+                        let mse = newMSE
+                        let timesWorse = 0
+                        loop bVector bestBvector mse timesWorse i+1
+        else
+            bestBvector
 
-//    for (int i = 0; i < maxIterations; ++i)
-//    {
-//        //Console.WriteLine("=================================");
-//        //Console.WriteLine(i);
-//
-//        double[] newBvector = ConstructNewBetaVector(bVector, xMatrix, yVector, pVector); // generate new beta values using Newton-Raphson. could return null.
-//        if (newBvector == null)
-//        {
-//            //Console.WriteLine("The ConstructNewBetaVector() helper method in LogisticRegressionNewtonParameters() returned null");
-//            //Console.WriteLine("because the MatrixInverse() helper method in ConstructNewBetaVector returned null");
-//            //Console.WriteLine("because the current (X'X~) product could not be inverted");
-//            //Console.WriteLine("Returning best beta vector found");
-//            //Console.ReadLine();
-//            return bestBvector;
-//        }
-//
-//        //Console.WriteLine("New b vector is ");
-//        //Console.WriteLine(VectorAsString(newBvector)); Console.WriteLine("\n");
-//
-//        // no significant change?
-//        if (NoChange(bVector, newBvector, epsilon) == true) // we are done because of no significant change in beta[]
-//        {
-//            //Console.WriteLine("No significant change between old beta values and new beta values -- stopping");
-//            //Console.ReadLine();
-//            return bestBvector;
-//        }
-//        // spinning out of control?
-//        if (OutOfControl(bVector, newBvector, jumpFactor) == true) // any new beta more than jumpFactor times greater than old?
-//        {
-//            //Console.WriteLine("The new beta vector has at least one value which changed by a factor of " + jumpFactor + " -- stopping");
-//            //Console.ReadLine();
-//            return bestBvector;
-//        }
-//
-//        pVector = ConstructProbVector(xMatrix, newBvector);
-//
-//        // are we getting worse or better?
-//        double newMSE = MeanSquaredError(pVector, yVector); // smaller is better
-//        if (newMSE > mse) // new MSE is worse than current SSD
-//        {
-//            ++timesWorse;           // update counter
-//            if (timesWorse >= 4)
-//            {
-//            //Console.WriteLine("The new beta vector produced worse predictions even after modification four times in a row -- stopping");
-//            return bestBvector;
-//            }
-//            //Console.WriteLine("The new beta vector has produced probabilities which give worse predictions -- modifying new betas to halfway between old and new");
-//            //Console.WriteLine("Times worse = " + timesWorse);
-//
-//            bVector = VectorDuplicate(newBvector);   // update current b: old b becomes not the new b but halfway between new and old
-//            for (int k = 0; k < bVector.Length; ++k) { bVector[k] = (bVector[k] + newBvector[k]) / 2.0; }
-//            mse = newMSE;                            // update current SSD (do not update best b because we don't have a new best b)
-//            //Console.ReadLine();
-//        }
-//        else // new SSD is be better than old
-//        {
-//            bVector = VectorDuplicate(newBvector);  // update current b: old b becomes new b
-//            bestBvector = VectorDuplicate(bVector); // update best b
-//            mse = newMSE;                           // update current MSE
-//            timesWorse = 0;                         // reset counter
-//        }
-//
-//    } // end main iteration loop
+    loop bVector bestBvector mse timesWorse 0      
 
-    bestBvector
-
+let predictiveAccuracy (xMatrix:float[][]) (yVector:float[]) (bVector:float[]) =
+    // returns the percent (as 0.00 to 100.00) accuracy of the bVector measured by how many lines of data are correctly predicted.
+    // note: this is not the same as accuracy as measured by sum of squared deviations between 
+    // the probabilities produceed by bVector and 0.0 and 1.0 data in yVector
+    // For predictions we simply see if the p produced by b are >= 0.50 or not. 
+    0.0
 
 let run() =
     printfn "\nBegin Logistic Regression with Newton-Raphson demo"
