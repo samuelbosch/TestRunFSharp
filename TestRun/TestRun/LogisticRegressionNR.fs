@@ -34,7 +34,7 @@ let makeRawDataFile numLines seed fileName =
 
         let die = if (p < 0.5) then 0 else 1
 
-        sw.WriteLine(sprintf "%i %s %s %i" age sex (chol.ToString("F2")) die)
+        sw.WriteLine(sprintf "%i %s %.2f %i" age sex chol die)
    
     sw.Close()
     ofs.Close()
@@ -77,7 +77,7 @@ let loadRawDataIntoDesignMatrix rawDataFile =
 
     let ifs = new FileStream(rawDataFile, FileMode.Open)
     let sr = new StreamReader(ifs)
-    for row = 0 to ct do 
+    for row = 0 to ct-1 do 
         let line = sr.ReadLine().Trim()
         let tokens = line.Split(' ')
         let age = float tokens.[0]
@@ -98,7 +98,7 @@ let loadRawDataIntoYVector rawDataFile =
     let ifs = new FileStream(rawDataFile, FileMode.Open);
     let sr = new StreamReader(ifs);
     
-    for row = 0 to ct do 
+    for row = 0 to ct-1 do 
         let line = sr.ReadLine().Trim()
         let tokens = line.Split(' ')
         let died = if (int tokens.[3]) = 1 then 1.0 else 0.0
@@ -120,7 +120,9 @@ let matrixAsString (matrix:float[][]) numRows digits width =
 let vectorAsString (vector:float[]) count digits width =
     let acc s (e:float) = 
         s + e.ToString("F"+(string digits)).PadLeft(width) + Environment.NewLine
-    Array.fold acc "" vector
+    vector 
+    |> Seq.take (min count (vector.Length))
+    |> Seq.fold acc ""
 
 let vectorDuplicate = Array.copy
 
@@ -141,13 +143,13 @@ let constructProbVector (xMatrix:float[][]) (bVector:float []) =
 
     let mutable z = 0.0
 
-    for i = 0 to xRows do
+    for i = 0 to xRows-1 do
         z <- 0.0
-        for j = 0 to xCols do
-            z <- z + xMatrix.[i].[j] * bVector.[j] // b0(1.0) + b1x1 + b2x2 + . . .
+        for j = 0 to xCols-1 do
+            z <- z + (xMatrix.[i].[j] * bVector.[j]) // b0(1.0) + b1x1 + b2x2 + . . .
     
-            let p = 1.0 / (1.0 + Math.Exp(-z))  // consider checking for huge value of Math.Exp(-z) here
-            result.[i] <- p
+        let p = 1.0 / (1.0 + Math.Exp(-z))  // consider checking for huge value of Math.Exp(-z) here
+        result.[i] <- p
     
     result
 
@@ -164,8 +166,8 @@ let meanSquaredError (pVector:float[]) (yVector:float[]) =
         result / (float pRows)
 
 let matrixInit rows cols initializer =
-    Array.init cols (fun row -> 
-        Array.init rows (initializer row))
+    Array.init rows (fun row -> 
+        Array.init cols (initializer row))
 
 let matrixTranspose (matrix:float[][]) =
     let rows = matrix.Length
@@ -200,9 +202,9 @@ let matrixProduct (matrixA:float[][]) (matrixB:float[][]) =
         raise (new Exception("Non-conformable matrices in MatrixProduct"))
     
     let result = matrixCreate aRows bCols
-    for i = 0 to aRows do // each row of A
-        for j = 0 to bCols do // each col of B
-            for k = 0 to aCols do // could use k < bRows
+    for i = 0 to aRows-1 do // each row of A
+        for j = 0 to bCols-1 do // each col of B
+            for k = 0 to aCols-1 do // could use k < bRows
                 result.[i].[j] <- result.[i].[j] + (matrixA.[i].[k] * matrixB.[k].[j])
     result
 
@@ -224,9 +226,8 @@ let matrixDecompose (matrix:float[][]) =
     let n = rows // convenience
     let result = matrixDuplicate matrix
     let perm = Array.init n id // set up row permutation result
-    let mutable tog = 1 // toggle tracks number of row swaps. used by MatrixDeterminant
-    
-    let rec loop j =
+
+    let rec loop tog j = // toggle tracks number of row swaps. used by MatrixDeterminant
         if j >= n-1 then // each column
             Some(result), perm , tog
         else
@@ -237,14 +238,15 @@ let matrixDecompose (matrix:float[][]) =
                 if aij > max then
                     max <- aij 
                     pRow <- i
-        
-            if pRow <> j then // if largest value not on pivot, swap rows
-                swap result pRow j
-                swap perm pRow j // and swap perm info
-                tog <- -tog // adjust the row-swap toggle
+
+            let tog = if pRow <> j then // if largest value not on pivot, swap rows
+                        swap result pRow j
+                        swap perm pRow j // and swap perm info
+                        -tog // adjust the row-swap toggle
+                      else tog
         
             let ajj = result.[j].[j]
-            if (Math.Abs(ajj) > 0.00000001) then // if diagonal after swap is zero . . .
+            if (abs ajj < 0.00000001) then // if diagonal after swap is zero . . .
                 None, perm, tog 
             else
                 for i = j + 1 to n - 1 do
@@ -252,8 +254,8 @@ let matrixDecompose (matrix:float[][]) =
                     result.[i].[j] <- aij
                     for k = j + 1 to n - 1 do
                         result.[i].[k] <- result.[i].[k] - (aij * result.[j].[k])    
-                loop (j+1)
-    loop 0
+                loop tog (j+1)
+    loop 1 0
 
 let helperSolve (luMatrix:float[][]) (b:float[]) =
     // solve Ax = b if you already have luMatrix from A and b has been permuted
@@ -282,8 +284,7 @@ let helperSolve (luMatrix:float[][]) (b:float[]) =
 
 let matrixInverse (matrix:float[][]) =
     let n = matrix.Length
-    
-    let lum, perm, toggle = matrixDecompose matrix
+    let lum, (perm:int []), (toggle:int) = matrixDecompose matrix
     match lum with 
     | None -> None
     | Some(lum) ->
@@ -409,13 +410,13 @@ let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon
                                 newBvector // update current b: old b becomes not the new b but halfway between new and old
                                 |> Array.mapi (fun k newB -> (bVector.[k] + newB ) / 2.0)
                             let mse = newMSE
-                            loop bVector bestBvector mse timesWorse i+1
+                            loop bVector bestBvector mse timesWorse (i+1)
                     else // new SSD is be better than old
                         let bVector = vectorDuplicate newBvector
                         let bestBvector = vectorDuplicate bVector
                         let mse = newMSE
                         let timesWorse = 0
-                        loop bVector bestBvector mse timesWorse i+1
+                        loop bVector bestBvector mse timesWorse (i+1)
         else
             bestBvector
 
@@ -426,7 +427,25 @@ let predictiveAccuracy (xMatrix:float[][]) (yVector:float[]) (bVector:float[]) =
     // note: this is not the same as accuracy as measured by sum of squared deviations between 
     // the probabilities produceed by bVector and 0.0 and 1.0 data in yVector
     // For predictions we simply see if the p produced by b are >= 0.50 or not. 
-    0.0
+    let xRows, xCols = xMatrix.Length, xMatrix.[0].Length
+    let yRows, bRows = yVector.Length,bVector.Length
+    if (xCols <> bRows || xRows <> yRows) then
+        raise (new Exception("Bad dimensions for xMatrix or yVector or bVector in PredictiveAccuracy()"))
+    let pVector = constructProbVector xMatrix bVector
+    let pRows = pVector.Length;
+    if pRows <> xRows then
+        raise (new Exception("Unequal rows in prob vector and design matrix in PredictiveAccuracy()"))
+
+    
+    let numberCasesCorrect = 
+        Array.map2 (fun y p -> if (y=1.0)= (p>=0.5) then 1. else 0.) yVector pVector
+        |> Array.sum
+    let numberCasesWrong = (float yVector.Length) - numberCasesCorrect
+    let total = numberCasesCorrect + numberCasesWrong
+    if total = 0. then
+        0.
+    else
+        (100. * numberCasesCorrect) / total
 
 let run() =
     printfn "\nBegin Logistic Regression with Newton-Raphson demo"
@@ -464,10 +483,10 @@ let run() =
     let beta = computeBestBeta xTrainMatrix yTrainVector maxIterations epsilon jumpFactor // computing the beta parameters is synonymous with 'training'
     Console.WriteLine("\nNewton-Raphson complete");
     Console.WriteLine("\nThe beta vector is: ");
-    Console.WriteLine(vectorAsString beta (int.MaxValue) 4 10)
+    Console.WriteLine(vectorAsString beta (Int32.MaxValue) 4 10)
 
     Console.WriteLine("Computing accuracy on test data using the beta values")
     let acc = predictiveAccuracy xTestMatrix yTestVector beta // percent of data cases correctly predicted in the test data set.
-    printfn "\nThe predictive accuracy of the model on the test data is %s%\n" (acc.ToString("F2"))
+    printfn "\nThe predictive accuracy of the model on the test data is %2f%%\n" acc
 
     Console.WriteLine("\nEnd demo");

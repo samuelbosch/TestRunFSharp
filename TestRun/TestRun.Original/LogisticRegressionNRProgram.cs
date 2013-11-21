@@ -6,9 +6,9 @@ using System.IO;
 
 namespace LogisticRegressionNewtonRaphson
 {
-  class LogisticRegressionNRProgram
+  public class LogisticRegressionNRProgram
   {
-    static void Main(string[] args)
+    public static void Main(string[] args)
     {
       try
       {
