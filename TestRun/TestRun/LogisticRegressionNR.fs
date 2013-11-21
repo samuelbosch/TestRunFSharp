@@ -11,7 +11,7 @@ let makeRawDataFile numLines seed fileName =
 
     let rand = new Random(seed)
 
-    for i=0 to numLines do
+    for i=0 to numLines-1 do
         let age = rand.Next(35, 81); // [35,81) == [35,80]
         let sex = if (rand.NextDouble() < 0.50) then "M" else "F"
         let mutable chol = (float age) / 10.0 - 1.0
@@ -273,7 +273,7 @@ let helperSolve (luMatrix:float[][]) (b:float[]) =
 
     // 3. solve Ux = y using backward substitution
     x.[n-1] <- x.[n-1] / luMatrix.[n - 1].[n - 1]
-    for i in n - 2 .. 0 do 
+    for i in n - 2 .. -1 .. 0 do 
         let mutable sum = x.[i]
 
         for j in i + 1 .. n - 1 do
@@ -384,7 +384,7 @@ let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon
     let mse = meanSquaredError pVector yVector
     let timesWorse = 0 // how many times are the new betas worse (i.e., give worse MSE) than the current betas
 
-    let rec loop (bVector:float[]) (bestBvector:float[]) (mse:float) timesWorse i = 
+    let rec loop (bVector:float[]) (bestBvector:float[]) (pVector:float[]) (mse:float) timesWorse i = 
         if i < maxIterations then
             let newBvector = constructNewBetaVector bVector xMatrix yVector pVector // generate new beta values using Newton-Raphson. could return null.
             match newBvector with
@@ -392,10 +392,10 @@ let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon
             | Some(newBvector) ->
                 // no significant change?
                 if noChange bVector newBvector epsilon then
-                    newBvector
+                    bestBvector
                 // spinning out of control?
                 else if outOfControl bVector newBvector jumpFactor then
-                    newBvector
+                    bestBvector
                 else
                     let pVector = constructProbVector xMatrix newBvector
                     
@@ -410,17 +410,17 @@ let computeBestBeta (xMatrix:float [][]) (yVector:float[]) maxIterations epsilon
                                 newBvector // update current b: old b becomes not the new b but halfway between new and old
                                 |> Array.mapi (fun k newB -> (bVector.[k] + newB ) / 2.0)
                             let mse = newMSE
-                            loop bVector bestBvector mse timesWorse (i+1)
+                            loop bVector bestBvector pVector mse timesWorse (i+1)
                     else // new SSD is be better than old
                         let bVector = vectorDuplicate newBvector
                         let bestBvector = vectorDuplicate bVector
                         let mse = newMSE
                         let timesWorse = 0
-                        loop bVector bestBvector mse timesWorse (i+1)
+                        loop bVector bestBvector pVector mse timesWorse (i+1)
         else
             bestBvector
 
-    loop bVector bestBvector mse timesWorse 0      
+    loop bVector bestBvector pVector mse timesWorse 0      
 
 let predictiveAccuracy (xMatrix:float[][]) (yVector:float[]) (bVector:float[]) =
     // returns the percent (as 0.00 to 100.00) accuracy of the bVector measured by how many lines of data are correctly predicted.
